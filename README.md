@@ -1,13 +1,13 @@
 # UAV Ground Control Station Lab (ArduPilot SITL + QGroundControl)
 
-A small lab where I set up a simulated drone and a Ground Control Station (GCS) on my own laptop, connected through MAVLink, and documented the problems I ran into along the way.
+A small lab where I set up a simulated drone and a Ground Control Station (GCS), first on one machine and then on two separate machines, connected through MAVLink, and documented the problems I ran into along the way.
 
 I built it to understand how a GCS talks to a vehicle: the link, the ports, the telemetry and the commands. It is a learning project, not production work.
 
 ## What it does
 
 - Runs an **ArduPilot Copter** simulator (SITL) on Ubuntu inside WSL2.
-- Connects **QGroundControl** (the GCS) to it over **MAVLink / UDP**.
+- Connects **QGroundControl** (the GCS) to it over **MAVLink / UDP**, either on the same PC or on a second Linux machine on the same network.
 - From the GCS I can arm, take off, send the drone to a point on the map, and return it to launch.
 
 ![QGroundControl showing the simulated drone flying to a "Go here" point](docs/qgc-flight.png)
@@ -42,6 +42,25 @@ output add 127.0.0.1:14550
 
 QGroundControl connects automatically and shows the vehicle on the map.
 
+## Two-machine setup
+
+To get closer to a real setup, I separated the vehicle and the ground station:
+
+- **Vehicle:** ArduPilot SITL on my PC (Ubuntu in WSL2).
+- **GCS:** QGroundControl (Linux AppImage) on a separate Linux Mint laptop, on the same Wi-Fi network.
+
+On the laptop I found its IP with `ip a`, and on the PC I added a second MAVProxy output pointing at it:
+
+```
+output add 192.168.1.159:14550
+```
+
+From the laptop I can arm, take off and send the vehicle to a point on the map, so commands reach the vehicle over the network as well as telemetry coming back.
+
+![MAVProxy forwarding telemetry to the second machine](docs/two-machine-mavproxy.png)
+
+![QGroundControl on the laptop controlling the simulated vehicle](docs/qgc-two-machines.png)
+
 ## Problems I ran into (and how I fixed them)
 
 | Problem | Cause | Fix |
@@ -49,19 +68,21 @@ QGroundControl connects automatically and shows the vehicle on the map.
 | QGroundControl for Windows crashed on start with *Bad Image* (`gstreamer-1.0-0.dll`, error `0xc0e90002`) | Windows blocked a binary that is not recognised/signed, most likely Windows 11 Smart App Control | Did not disable the protection. Ran the Linux AppImage inside WSL instead |
 | QGroundControl showed *Disconnected* although the simulator was running | `sim_vehicle.py` detected WSL and sent telemetry to the Windows host (`172.17.192.1:14550`), not to localhost where the GCS was running | Added a second output with `output add 127.0.0.1:14550` |
 | `takeoff` failed in MAVProxy | The vehicle was not in `GUIDED` mode | Set the mode to `GUIDED` before arming and taking off |
+| QGroundControl on the second machine did not connect | The laptop's firewall was blocking incoming UDP 14550 | Allowed UDP 14550 on the laptop's firewall (`ufw`) |
 
 ## What I learned
 
 - A GCS is a client on a link: the interesting work is the link itself (ports, routing, firewalls, link quality), not the buttons.
 - How to read what MAVProxy prints to work out where the telemetry is actually going.
+- That a firewall on the GCS side can silently stop a working vehicle from being seen.
 - How to document a problem so someone else can reproduce the fix.
 
 ## Next steps (planned, not done yet)
 
-- Put the vehicle side on a Raspberry Pi and the GCS on a separate machine, connected over Wi-Fi.
-- Add a WireGuard VPN between them and a firewall rule that only allows MAVLink (UDP 14550).
+- Put the vehicle side on a Raspberry Pi instead of running the simulator on the PC.
+- Restrict the firewall rule so only the vehicle's IP can send MAVLink (UDP 14550), and add a WireGuard VPN between the two machines.
 - Measure latency and packet loss, simulate a link failure, and write up how I diagnosed it.
 
 ## Tech
 
-ArduPilot SITL · MAVProxy · MAVLink · QGroundControl · WSL2 · Ubuntu · UDP
+ArduPilot SITL · MAVProxy · MAVLink · QGroundControl · WSL2 · Ubuntu · Linux Mint · UDP · ufw
