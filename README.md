@@ -156,7 +156,7 @@ Result:
 
 ## Next steps (planned, not done yet)
 
-- Put the vehicle side on a Raspberry Pi instead of running the simulator on the PC.
+- Swap roles: run the simulator headless on the laptop, as if it were the onboard computer, and the GCS on the PC.
 - Watch how QGroundControl and the vehicle react to a longer link loss (GCS failsafe).
 - Simulate a degraded link (delay and packet loss) instead of a full outage.
 
