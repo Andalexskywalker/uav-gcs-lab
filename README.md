@@ -61,6 +61,23 @@ From the laptop I can arm, take off and send the vehicle to a point on the map, 
 
 ![QGroundControl on the laptop controlling the simulated vehicle](docs/qgc-two-machines.png)
 
+### Firewall check
+
+The laptop's firewall (`ufw`) denies incoming traffic by default, so I allowed MAVLink only from the vehicle PC:
+
+```bash
+sudo ufw allow from <pc-ip> to any port 14550 proto udp
+```
+
+To check that the rule is what lets the telemetry through, I tested without GUI using netcat on the laptop (`nc -ul 14550 | xxd | head`):
+
+- **With the rule:** MAVLink v2 packets arrive (each starts with the `fd` marker).
+- **Without the rule:** nothing arrives, and the kernel log shows the drop:
+
+```
+[UFW BLOCK] IN=wlp3s0 SRC=<pc-ip> DST=<laptop-ip> PROTO=UDP DPT=14550
+```
+
 ## Problems I ran into (and how I fixed them)
 
 | Problem | Cause | Fix |
@@ -68,7 +85,7 @@ From the laptop I can arm, take off and send the vehicle to a point on the map, 
 | QGroundControl for Windows crashed on start with *Bad Image* (`gstreamer-1.0-0.dll`, error `0xc0e90002`) | Windows blocked a binary that is not recognised/signed, most likely Windows 11 Smart App Control | Did not disable the protection. Ran the Linux AppImage inside WSL instead |
 | QGroundControl showed *Disconnected* although the simulator was running | `sim_vehicle.py` detected WSL and sent telemetry to the Windows host (`172.17.192.1:14550`), not to localhost where the GCS was running | Added a second output with `output add 127.0.0.1:14550` |
 | `takeoff` failed in MAVProxy | The vehicle was not in `GUIDED` mode | Set the mode to `GUIDED` before arming and taking off |
-| QGroundControl on the second machine did not connect | The laptop's firewall was blocking incoming UDP 14550 | Allowed UDP 14550 on the laptop's firewall (`ufw`) |
+| Telemetry did not reach the second machine | `ufw` on the laptop denies incoming traffic by default; the kernel log showed `[UFW BLOCK] ... SRC=<vehicle PC> DPT=14550` | Allowed UDP 14550 only from the vehicle PC's IP: `sudo ufw allow from <pc-ip> to any port 14550 proto udp` |
 
 ## What I learned
 
@@ -80,7 +97,7 @@ From the laptop I can arm, take off and send the vehicle to a point on the map, 
 ## Next steps (planned, not done yet)
 
 - Put the vehicle side on a Raspberry Pi instead of running the simulator on the PC.
-- Restrict the firewall rule so only the vehicle's IP can send MAVLink (UDP 14550), and add a WireGuard VPN between the two machines.
+- Add a WireGuard VPN between the two machines and point MAVProxy at the tunnel address.
 - Measure latency and packet loss, simulate a link failure, and write up how I diagnosed it.
 
 ## Tech
