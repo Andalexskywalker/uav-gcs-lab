@@ -78,6 +78,66 @@ To check that the rule is what lets the telemetry through, I tested without GUI 
 [UFW BLOCK] IN=wlp3s0 SRC=<pc-ip> DST=<laptop-ip> PROTO=UDP DPT=14550
 ```
 
+## WireGuard tunnel between the two machines
+
+Next, I put the MAVLink link inside a WireGuard VPN, so the telemetry travels encrypted between the vehicle and the GCS.
+
+- **Laptop (GCS):** `10.10.10.1/24`, listening on UDP 51820.
+- **PC (vehicle, WSL2):** `10.10.10.2/24`, with the laptop's LAN address as the endpoint and `PersistentKeepalive = 25` to keep the WSL2 NAT mapping open.
+
+Each machine generated its own key pair. Only the public keys were exchanged, and the private keys never left their machine.
+
+Firewall rules on the laptop: WireGuard is allowed only from the PC, and MAVLink only from inside the tunnel:
+
+```bash
+sudo ufw allow from <pc-ip> to any port 51820 proto udp
+sudo ufw allow in on wg0 from 10.10.10.2 to any port 14550 proto udp
+```
+
+In MAVProxy, I pointed the output at the tunnel address:
+
+```
+output add 10.10.10.1:14550
+```
+
+To check that the telemetry really goes through the tunnel, I captured traffic on the laptop's tunnel interface:
+
+```
+$ sudo timeout 5 tcpdump -ni wg0 udp port 14550 -c 5
+IP 10.10.10.2.36876 > 10.10.10.1.14550: UDP, length 40
+IP 10.10.10.2.36876 > 10.10.10.1.14550: UDP, length 36
+...
+5 packets captured
+0 packets dropped by kernel
+```
+
+### Measurements
+
+I ran 50 pings from the PC (WSL2) to the laptop, one test right after the other, over home Wi-Fi:
+
+| Path | Loss | Min | Avg | Max |
+|---|---|---|---|---|
+| Direct LAN (no VPN) | 0% | 2.4 ms | 2.9 ms | 5.2 ms |
+| WireGuard tunnel | 0% | 2.9 ms | 3.7 ms | 6.9 ms |
+
+In this test, the tunnel added about 0.8 ms on average and lost no packets. These are single runs over Wi-Fi, so the numbers vary from run to run.
+
+### Link failure test
+
+With a continuous ping running on the PC (`ping -D -O 10.10.10.1`), I took the tunnel down on the laptop for 20 seconds and brought it back up:
+
+```bash
+sudo wg-quick down wg0; sleep 20; sudo wg-quick up wg0
+```
+
+![Continuous ping through the tunnel: 20 pings with no answer while the tunnel is down, then replies resume](docs/link-failure-ping.png)
+
+Result:
+
+- **During the outage:** 20 consecutive pings with no answer (`icmp_seq` 31 to 50). That means about 20 s without a link, which matches the 20 s of downtime.
+- **Recovery:** the first ping after the tunnel came back was answered in 4.7 ms, and the following pings returned to about 3 ms. The tunnel recovered on its own, with no manual action on the PC side.
+- MAVLink runs over UDP, so packets sent during the outage are lost, not delayed. The telemetry simply resumes when the link returns.
+
 ## Problems I ran into (and how I fixed them)
 
 | Problem | Cause | Fix |
@@ -97,9 +157,9 @@ To check that the rule is what lets the telemetry through, I tested without GUI 
 ## Next steps (planned, not done yet)
 
 - Put the vehicle side on a Raspberry Pi instead of running the simulator on the PC.
-- Add a WireGuard VPN between the two machines and point MAVProxy at the tunnel address.
-- Measure latency and packet loss, simulate a link failure, and write up how I diagnosed it.
+- Watch how QGroundControl and the vehicle react to a longer link loss (GCS failsafe).
+- Simulate a degraded link (delay and packet loss) instead of a full outage.
 
 ## Tech
 
-ArduPilot SITL · MAVProxy · MAVLink · QGroundControl · WSL2 · Ubuntu · Linux Mint · UDP · ufw
+ArduPilot SITL · MAVProxy · MAVLink · QGroundControl · WSL2 · Ubuntu · Linux Mint · UDP · ufw · WireGuard · tcpdump
